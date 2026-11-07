@@ -84,10 +84,10 @@
       <h2>2. Pipeline</h2>
       <ul>
         <li>Làm sạch → <code>purchases</code> (776.920 dòng) + <code>cancellations</code></li>
-        <li>1 khách = 1 dòng: R, F, M + avg_order, n_products, tenure, cancel_*</li>
+        <li>1 khách = 1 dòng: RFM + hành vi; thêm khoảng cách mua và tỷ trọng hóa đơn hủy</li>
         <li>Baseline RFM ngũ phân vị</li>
-        <li><code>log1p</code> + StandardScaler → K-Means &amp; Hierarchical</li>
-        <li>Metric: Silhouette ↑, Davies–Bouldin ↓ + PCA</li>
+        <li><code>log1p</code> + StandardScaler → K-Means, Ward, GMM; DBSCAN mở rộng</li>
+        <li>Metric: Silhouette, Davies–Bouldin, Calinski–Harabasz; ARI và PCA</li>
       </ul>
     </section>
 
@@ -104,33 +104,38 @@
     <section class="slide">
       <h2>4. So sánh thuật toán</h2>
       <table>
-        <tr><th>k</th><th>KMeans Sil</th><th>KMeans DB</th><th>Hier Sil</th><th>Hier DB</th></tr>
-        <tr><td>2</td><td><strong>0.337</strong></td><td>1.176</td><td>0.326</td><td>1.056</td></tr>
-        <tr><td>4</td><td><strong>0.261</strong></td><td><strong>1.228</strong></td><td>0.197</td><td>1.335</td></tr>
+        <tr><th>Mô hình</th><th>Cấu hình</th><th>Silhouette</th><th>DB</th><th>CH</th><th>Cụm nhỏ nhất</th></tr>
+        <tr><td>K-Means</td><td>k=5, k-means++</td><td><strong>0.3039</strong></td><td><strong>1.2195</strong></td><td>2,241.8</td><td>157</td></tr>
+        <tr><td>Ward</td><td>k=3</td><td>0.2596</td><td>1.2829</td><td><strong>2,343.6</strong></td><td>1,456</td></tr>
+        <tr><td>GMM</td><td>k=4, full</td><td>0.2808</td><td>1.3440</td><td>2,320.6</td><td>1,064</td></tr>
+        <tr><td>DBSCAN</td><td>eps=1.7762, min_samples=10</td><td>0.5282*</td><td>0.4926*</td><td>68.5*</td><td>10</td></tr>
       </table>
-      <p>Chọn <strong>K-Means k=4</strong> để diễn giải (cân bằng metric và số nhóm hành động).</p>
+      <p>Chọn <strong>K-Means k=5</strong>: tốt hơn về Silhouette/DB trong các mô hình gán đủ khách, ổn định (ARI=0.9995), cụm nhỏ nhất 157 khách.</p>
+      <p class="muted">* DBSCAN chỉ tính chỉ số trên 97.7% điểm được gán; 137 điểm nhiễu nên không so trực tiếp.</p>
     </section>
 
     <section class="slide">
-      <h2>5. Bốn cụm chính</h2>
+      <h2>5. Năm cụm chính</h2>
       <table>
         <tr><th>Nhóm</th><th>Khách</th><th>Đặc điểm</th><th>Hành động</th></tr>
-        <tr><td>VIP trung thành</td><td>1.270</td><td>R thấp, F/M cao · ~71% DT</td><td>Giữ chân</td></tr>
-        <tr><td>Thường xuyên</td><td>2.222</td><td>Ổn định</td><td>Upsell</td></tr>
-        <tr><td>Một lần rồi bỏ</td><td>2.152</td><td>1 đơn, lâu không mua</td><td>Win-back</td></tr>
-        <tr><td>Rủi ro hay hủy</td><td>218</td><td>Cancel rate ~25%</td><td>Giảm ma sát</td></tr>
+        <tr><td>VIP trung thành</td><td>1.192</td><td>Median F=12 · 70.7% DT</td><td>Giữ chân</td></tr>
+        <tr><td>Thường xuyên</td><td>1.862</td><td>Median F=4</td><td>Upsell</td></tr>
+        <tr><td>Một lần rồi bỏ</td><td>1.649</td><td>Median F=1, R=393 ngày</td><td>Win-back</td></tr>
+        <tr><td>Mua thưa thớt, giá trị TB</td><td>1.002</td><td>Median R=198 ngày</td><td>Theo dõi giảm hoạt động</td></tr>
+        <tr><td>Rủi ro hay hủy</td><td>157</td><td>Median cancel rate=31.5%</td><td>Rà soát hủy</td></tr>
       </table>
     </section>
 
     <section class="slide">
       <h2>6. Kết luận</h2>
       <ul>
-        <li>Mô hình chọn: <strong>K-Means k=4</strong></li>
+        <li>Mô hình chọn: <strong>K-Means k=5</strong></li>
         <li>Trả lời được câu hỏi phân khúc và ưu tiên chăm sóc</li>
         <li>Hạn chế: lệch UK/sỉ; không có nhãn chân lý</li>
-        <li>Mở rộng: DBSCAN, đặc trưng mùa vụ, scoring churn định kỳ, demo Streamlit</li>
+        <li>Thiếu Quantity giao dịch gốc để tính số lượng trung bình/đơn và tỷ lệ trả theo lượng</li>
+        <li>ARI trung bình 0.9995 trên 7 seed</li>
       </ul>
-      <p class="muted">Chi tiết: <code>bao_cao.md</code> · Notebook: <code>online_retail_clustering.ipynb</code></p>
+      <p class="muted">Notebook: <code>online_retail_clustering.ipynb</code></p>
     </section>
   </div>
 

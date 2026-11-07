@@ -12,21 +12,26 @@ Từ đặc trưng RFM và hành vi mua (kèm tỷ lệ hủy), khách hàng tá
 online-retail-ml/
 ├── README.md
 ├── requirements.txt
-├── bao_cao.md                          # Báo cáo 5 chương
 ├── slides.html                         # Slide trình bày
 ├── app.py                              # Demo Streamlit (điểm cộng)
-├── online_retail_clustering.ipynb      # Notebook chạy lại được
+├── online_retail_clustering.ipynb      # Notebook chạy phân cụm và xuất báo cáo
+├── analysis_pipeline.py                # Mã nguồn pipeline thực nghiệm trong notebook
 ├── may_hoc.py                          # Script pipeline đầy đủ (DuckDB)
-├── figures/                            # Biểu đồ PCA, ROC, so sánh thuật toán
-└── outputs/                            # Kết quả Excel khi chạy notebook
+├── outputs/                            # Dữ liệu đặc trưng và kết quả Excel
+└── figures/                            # Hình phân tích
 ```
+
+Các bảng Excel đầu vào và kết quả được lưu trong `outputs/`; hình phân tích trong
+`figures/`. Báo cáo Word được lưu ngoài repo tại
+`%USERPROFILE%/Downloads/OnlineRetailII_artifacts/`. Đặt `RETAIL_OUTPUTS_DIR`
+để đổi thư mục Excel hoặc `RETAIL_ARTIFACTS_DIR` để đổi thư mục artifact báo cáo.
 
 ## Dữ liệu
 
 - Nguồn: [UCI Online Retail II](https://archive.ics.uci.edu/dataset/502/online+retail+ii)
 - Trích dẫn: Chen, D. (2012). Online Retail II [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5CG6D
-- File Excel mặc định trên máy này: `C:/Users/nguye/Downloads/online+retail+ii/online_retail_II.xlsx`
-- Database đã xử lý (tuỳ chọn): `C:/Users/nguye/Downloads/online-retail-ii/retail.duckdb`
+- File Excel mặc định: `%USERPROFILE%/Downloads/online+retail+ii/online_retail_II.xlsx`
+- Database đã xử lý (tuỳ chọn): `%USERPROFILE%/Downloads/OnlineRetailII_artifacts/retail.duckdb`
 
 Đặt biến môi trường `RETAIL_XLSX` nếu file nằm chỗ khác.
 
@@ -44,15 +49,18 @@ python -m pip install -r requirements.txt
 jupyter notebook online_retail_clustering.ipynb
 ```
 
-Chạy lần lượt các cell. Notebook sẽ:
+Chạy lần lượt các cell từ thư mục gốc repo. Notebook phần thực nghiệm đọc `outputs/customer_features.xlsx` (không làm lại bước
+làm sạch/EDA), rồi xuất bảng Excel vào `outputs/`, hình vào `figures/` và báo cáo
+Word bên ngoài repo.
 
-1. Đọc Excel (hoặc DuckDB nếu đã có bảng `purchases`)
-2. Làm sạch → bảng mua / hủy
-3. EDA ngắn
-4. Feature RFM + hành vi
-5. Baseline RFM ngũ phân vị
-6. K-Means và Hierarchical + Silhouette / Davies–Bouldin
-7. PCA và xuất file vào `outputs/`
+Có thể chạy toàn bộ pipeline và tái tạo notebook/báo cáo bằng:
+
+```powershell
+python analysis_pipeline.py
+```
+
+Đầu vào `outputs/customer_features.xlsx` phải có sẵn; để chạy lại từ dữ liệu giao dịch,
+dùng riêng script `may_hoc.py` với đường dẫn nguồn đã cấu hình trong môi trường.
 
 ### Script đầy đủ
 
@@ -64,7 +72,8 @@ Lần chạy đầu đọc lại Excel khá lâu (~1–2 phút). Các lần sau 
 
 ### Demo Streamlit (điểm cộng)
 
-Cần có sẵn `outputs/customer_clusters_k4.xlsx` (đã có nếu chạy pipeline trước đó).
+Cần có sẵn `outputs/customer_clusters_final.xlsx` (kết quả mới); app sẽ tự
+dùng `customer_clusters_k4.xlsx` nếu file kết quả mới chưa có.
 
 ```powershell
 python -m pip install streamlit plotly
@@ -79,16 +88,16 @@ Trình duyệt mở trang demo: lọc theo cụm, PCA tương tác, tra cứu Cu
 |------|----------|
 | Input | Dòng mặt hàng trên hóa đơn |
 | Làm sạch | Bỏ thiếu Customer ID, giá ≤ 0, mã phí (POST/DOT/…); tách đơn hủy |
-| Feature | Recency, Frequency, Monetary, avg_order, n_products, tenure, cancel_* |
-| Baseline | Điểm RFM theo ngũ phân vị |
-| Mô hình | K-Means, Hierarchical (Ward); hỗ trợ PCA |
-| Metric | Silhouette (↑), Davies–Bouldin (↓) |
-| Output | Nhãn cụm + hồ sơ khách (VIP, thường xuyên, một lần rồi bỏ, rủi ro hủy) |
+| Feature | RFM, avg_order, n_products, tenure, cancel_* và đặc trưng suy ra |
+| Baseline | Luật RFM ngũ phân vị |
+| Mô hình | K-Means, Hierarchical Ward, GMM; DBSCAN mở rộng |
+| Metric | Silhouette, Davies–Bouldin, Calinski–Harabasz; AIC/BIC cho GMM |
+| Output | Bảng so sánh, hồ sơ cụm, độ ổn định ARI, PCA và báo cáo Word |
 
 ## Kết quả chính (tóm tắt)
 
-- **K-Means k=4** được chọn để diễn giải (Silhouette 0.261, DB 1.228; tốt hơn Hierarchical cùng k).
-- Bốn nhóm: VIP trung thành (~71% doanh thu), thường xuyên, một lần rồi bỏ, rủi ro hay hủy.
+- **K-Means k=5** được chọn để diễn giải (Silhouette 0.3039, DB 1.2195, CH 2.241,8; cụm nhỏ nhất 157 khách).
+- Năm nhóm: VIP trung thành (70,7% doanh thu), thường xuyên, một lần rồi bỏ, mua thưa thớt giá trị trung bình, rủi ro hay hủy.
 - Điểm cộng: Logistic Regression dự đoán mua lại 90 ngày, AUC ≈ 0.79.
 
 ## Ghi nhận hỗ trợ

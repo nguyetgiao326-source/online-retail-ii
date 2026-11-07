@@ -1,6 +1,7 @@
-"""Demo Streamlit — phân khúc khách hàng Online Retail II (K-Means k=4)."""
+"""Demo Streamlit — phân khúc khách hàng Online Retail II (K-Means k=5)."""
 
 from pathlib import Path
+import os
 
 import numpy as np
 import pandas as pd
@@ -10,7 +11,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 ROOT = Path(__file__).resolve().parent
-OUT = ROOT / "outputs"
+OUT = Path(os.environ.get("RETAIL_OUTPUTS_DIR", str(ROOT / "outputs"))).expanduser()
 FIG = ROOT / "figures"
 
 SEGMENT_ACTIONS = {
@@ -34,17 +35,27 @@ SEGMENT_ACTIONS = {
         "action": "Giảm ma sát hoàn trả: kiểm tra mô tả SP, chính sách đổi trả.",
         "color": "#ef4444",
     },
+    "khach_mua_thua_thot_gia_tri_trung_binh": {
+        "label": "Mua thưa thớt, giá trị trung bình",
+        "action": "Theo dõi giảm hoạt động; nhắc mua lại phù hợp lịch sử mua.",
+        "color": "#a78bfa",
+    },
 }
 
 
 @st.cache_data
 def load_clusters() -> pd.DataFrame:
-    path = OUT / "customer_clusters_k4.xlsx"
+    path = OUT / "customer_clusters_final.xlsx"
+    if not path.exists():
+        path = OUT / "customer_clusters_k4.xlsx"
     if not path.exists():
         raise FileNotFoundError(
-            f"Không thấy {path}. Chạy notebook hoặc may_hoc.py để tạo outputs trước."
+            f"Không tìm thấy {OUT / 'customer_clusters_final.xlsx'} hoặc "
+            f"{OUT / 'customer_clusters_k4.xlsx'}. "
+            "Chạy analysis_pipeline.py hoặc đặt RETAIL_ARTIFACTS_DIR tới thư mục dữ liệu."
         )
     df = pd.read_excel(path)
+    df["model_label"] = "K-Means k=5" if path.name == "customer_clusters_final.xlsx" else "K-Means k=4"
     if "ten_cum" not in df.columns and "cluster" in df.columns:
         # fallback nếu chỉ có số cụm
         names = {
@@ -67,6 +78,19 @@ def load_optional(name: str) -> pd.DataFrame | None:
 
 @st.cache_data
 def add_pca(df: pd.DataFrame) -> pd.DataFrame:
+    derived = df.copy()
+    if "avg_interpurchase_days" not in derived.columns:
+        derived["avg_interpurchase_days"] = np.where(
+            derived["frequency"] > 1,
+            derived["tenure_days"] / (derived["frequency"] - 1),
+            0.0,
+        )
+    if "cancel_invoice_share" not in derived.columns:
+        denominator = derived["frequency"] + derived["cancel_invoices"]
+        derived["cancel_invoice_share"] = (
+            derived["cancel_invoices"] / denominator.replace(0, np.nan)
+        ).fillna(0.0)
+
     log_cols = [
         "frequency",
         "monetary",
@@ -74,21 +98,37 @@ def add_pca(df: pd.DataFrame) -> pd.DataFrame:
         "n_products",
         "cancel_value",
         "cancel_invoices",
+        "cancel_rate",
+        "avg_interpurchase_days",
+        "cancel_invoice_share",
     ]
-    cols = ["recency", "tenure_days", "cancel_rate"] + log_cols
-    missing = [c for c in cols if c not in df.columns]
+    cols = [
+        "recency",
+        "frequency",
+        "monetary",
+        "avg_order",
+        "n_products",
+        "tenure_days",
+        "cancel_value",
+        "cancel_invoices",
+        "cancel_rate",
+        "avg_interpurchase_days",
+        "cancel_invoice_share",
+    ]
+    missing = [c for c in cols if c not in derived.columns]
     if missing:
-        out = df.copy()
+        out = derived
         out["pca1"] = np.nan
         out["pca2"] = np.nan
         return out
 
-    X = df[cols].copy()
+    X = derived[cols].copy()
     for c in log_cols:
-        X[c] = np.log1p(X[c].clip(lower=0))
+        if X[c].skew() > 1:
+            X[c] = np.log1p(X[c])
     scaled = StandardScaler().fit_transform(X)
     xy = PCA(n_components=2, random_state=42).fit_transform(scaled)
-    out = df.copy()
+    out = derived
     out["pca1"] = xy[:, 0]
     out["pca2"] = xy[:, 1]
     return out
@@ -117,10 +157,6 @@ def main() -> None:
     )
 
     st.title("Phân khúc khách hàng Online Retail II")
-    st.caption(
-        "Demo K-Means k=4 · RFM + hành vi mua/hủy · Điểm cộng Streamlit cho đề tài Máy học"
-    )
-
     try:
         raw = load_clusters()
     except FileNotFoundError as exc:
@@ -128,6 +164,10 @@ def main() -> None:
         st.stop()
 
     df = add_pca(raw)
+    st.caption(
+        f"Demo {raw['model_label'].iloc[0]} · RFM + hành vi mua/hủy · "
+        "Điểm cộng Streamlit cho đề tài Máy học"
+    )
     profile = segment_profile(df)
     total_rev = float(df["monetary"].sum())
     total_cust = len(df)
@@ -178,7 +218,10 @@ def main() -> None:
                 lambda s: SEGMENT_ACTIONS.get(s, {}).get("action", "")
             )
             show["share_dt_%"] = (100 * show["tong_doanh_thu"] / total_rev).round(1)
-            st.subheader("Hồ sơ 4 cụm (K-Means)")
+            st.subheader(
+                f"Hồ sơ {profile['ten_cum'].nunique()} cụm "
+                f"({raw['model_label'].iloc[0]})"
+            )
             st.dataframe(
                 show[
                     [
@@ -215,7 +258,7 @@ def main() -> None:
             st.plotly_chart(fig_pie, use_container_width=True)
 
         st.subheader("Gợi ý hành động nhanh")
-        cols = st.columns(4)
+        cols = st.columns(min(5, max(1, len(SEGMENT_ACTIONS))))
         for col, (key, meta) in zip(cols, SEGMENT_ACTIONS.items()):
             n = int((df["ten_cum"] == key).sum())
             with col:
@@ -260,9 +303,9 @@ def main() -> None:
             fig.update_layout(height=520)
             st.plotly_chart(fig, use_container_width=True)
 
-        img = FIG / "pca_clusters_k4.png"
+        img = FIG / "final_clusters_pca.png"
         if img.exists():
-            with st.expander("Ảnh PCA đã lưu từ pipeline"):
+            with st.expander("Ảnh PCA tĩnh từ pipeline"):
                 st.image(str(img), use_container_width=True)
 
     with tab_lookup:
@@ -324,27 +367,20 @@ def main() -> None:
         st.caption("Hiển thị tối đa 500 khách có monetary cao nhất trong bộ lọc.")
 
     with tab_compare:
-        cmp = load_optional("cluster_algorithm_comparison.xlsx")
+        cmp = load_optional("candidate_model_comparison.xlsx")
         if cmp is None:
-            st.info("Chưa có file cluster_algorithm_comparison.xlsx trong outputs/.")
+            st.info("Chưa có file candidate_model_comparison.xlsx trong outputs/.")
         else:
-            st.subheader("K-Means vs Hierarchical")
+            st.subheader("So sánh mô hình trên RFM + hành vi")
             st.dataframe(cmp, use_container_width=True, hide_index=True)
-            st.caption("Silhouette càng cao càng tốt · Davies–Bouldin càng thấp càng tốt.")
-            long = cmp.melt(id_vars="k", var_name="metric", value_name="value")
-            fig = px.line(
-                long,
-                x="k",
-                y="value",
-                color="metric",
-                markers=True,
-                title="Metric theo số cụm k",
+            st.caption(
+                "DBSCAN tính metric trên điểm không nhiễu; không so trực tiếp "
+                "với mô hình gán toàn bộ khách."
             )
-            st.plotly_chart(fig, use_container_width=True)
 
-        cmp_img = FIG / "compare_kmeans_hierarchical_pca.png"
+        cmp_img = FIG / "model_selection.png"
         if cmp_img.exists():
-            st.image(str(cmp_img), caption="PCA: K-Means k=4 vs Hierarchical k=4")
+            st.image(str(cmp_img), caption="Elbow K-Means và BIC/AIC GMM")
 
     st.divider()
     st.caption(

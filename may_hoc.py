@@ -1,10 +1,33 @@
+import os
+from pathlib import Path
+
 import duckdb
 
-con = duckdb.connect(r"C:\Users\nguye\Downloads\online-retail-ii\retail.duckdb")
+ARTIFACT_ROOT = Path(
+    os.environ.get(
+        "RETAIL_ARTIFACTS_DIR",
+        str(Path.home() / "Downloads" / "OnlineRetailII_artifacts"),
+    )
+).expanduser()
+ROOT = Path(__file__).resolve().parent
+OUT_DIR = Path(
+    os.environ.get("RETAIL_OUTPUTS_DIR", str(ROOT / "outputs"))
+).expanduser()
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = Path(
+    os.environ.get("RETAIL_DB", str(ARTIFACT_ROOT / "retail.duckdb"))
+).expanduser()
+con = duckdb.connect(str(DB_PATH))
 con.execute("INSTALL excel;")
 con.execute("LOAD excel;")
 
-xlsx = "C:/Users/nguye/Downloads/online+retail+ii/online_retail_II.xlsx"
+XLSX_PATH = Path(
+    os.environ.get(
+        "RETAIL_XLSX",
+        str(Path.home() / "Downloads" / "online+retail+ii" / "online_retail_II.xlsx"),
+    )
+).expanduser()
+xlsx = str(XLSX_PATH).replace("\\", "/").replace("'", "''")
 
 con.execute(f"""
     CREATE OR REPLACE TABLE retail AS
@@ -220,8 +243,6 @@ print(con.execute("""
 # ---------------------------------------------------------------------------
 # Bước tiếp: bảng đặc trưng khách hàng + K-means
 # ---------------------------------------------------------------------------
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
@@ -229,7 +250,6 @@ from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 SNAPSHOT = "2011-12-10"
-OUT_DIR = Path(r"C:\Users\nguye\OneDrive\Pictures\Documents")
 
 con.execute(f"""
     CREATE OR REPLACE TABLE customer_features AS
