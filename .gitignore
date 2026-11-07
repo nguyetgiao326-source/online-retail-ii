@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Data files (too large / download from UCI)
+*.duckdb
+*.duckdb.wal
+online_retail_II.xlsx
+**/online_retail_II.xlsx
+data/raw/
